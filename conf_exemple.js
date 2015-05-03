@@ -10,6 +10,7 @@ module.exports = {
     "track_varys": [0.1, 0.3, 0.3, 0.8, 0.7, 0.2, 0.5], // chance to have a variation
     "evolution_curve": "bell1", // evolution curve
     "variation_pat": [3, 1], // pattern of variations, in bars
+    "fills": 2,// number of different fills
     "fills_per_phrase": 1, // number of fills in a phrase
     "groove": 0.0, // groove, mpc like
 }
