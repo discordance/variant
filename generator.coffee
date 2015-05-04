@@ -2,7 +2,6 @@ fs = require 'fs'
 _ = require 'lodash'
 
 sections = require './lib/sections'
-tools = require './lib/tools'
 
 # load the patterns
 fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
@@ -39,15 +38,15 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
 
   # mains
   for i in [0..config.patterns-1]
-    rnd = tools.randInt 0, 7
+    rnd = _.random 0, 7
     while rnd in pats
-      rnd = tools.randInt 0, 7
+      rnd = _.random 0, 7
     pats.push rnd
   # fills
   for i in [0..config.fills-1]
-    rnd = tools.randInt 0, 7
+    rnd = _.random 0, 7
     while rnd in pats or rnd in fills
-      rnd = tools.randInt 0, 7
+      rnd = _.random 0, 7
     fills.push rnd
 
   # make blocks, main or fills
@@ -98,9 +97,9 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
     # main and fills
     block = {main:main, fills:[]}
     while block.fills.length < config.fills_per_phrase
-      block.fills.push tools.randItem fills_pats
+      block.fills.push _.sample fills_pats
     # variations
-    variation main, tools.randItem block.fills
+    variation main, _.sample block.fills
 
 
 
