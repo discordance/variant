@@ -1,12 +1,17 @@
 fs = require 'fs'
-_ = require 'lodash'
+_ = require './lib/lodash_extended'
+
 
 sections = require './lib/sections'
+tools = require './lib/tools'
+markov = require './markov'
+
+midi = require './lib/midi_export'
 
 # load the patterns
 fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
   beats = JSON.parse file
-  config = require './conf_exemple.js'
+  config = require './conf.js'
 
   # how many phrases needed ?
   c = (60/config.bpm)*4
@@ -25,18 +30,33 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
   if !base
     console.log "style probably wrong, no style ..."
 
+  # shuffle base
+  if config.shuffle
+    rebase = []
+    _.each base, (track, i)->
+      chunks = _.chunk track, 16
+      chunks = _.shuffle chunks
+      flat = _.flatten chunks
+      # not on the kick
+      if i
+        rebase.push flat
+      else
+        rebase.push track
+
+    base = rebase
+
   # select different possible patterns according to the config
   # max length of for a track, in bar
   max_trk_len = _.max config.track_lengths
   # how many block (loop of 1, 2 o more bars) per phrase ?
   blocks = config.phrase/max_trk_len
   # construct building blocks
-  # -> {main: 1, variations: 2+, fills: 2+}
+  # -> {main: 1, variations: 1+, fills: 1+}
   # pats is selected uniq chuncks to build
   pats = []
   fills = []
 
-  # mains
+  # mains, picked random in patterns from db
   for i in [0..config.patterns-1]
     rnd = _.random 0, 7
     while rnd in pats
@@ -57,7 +77,6 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
       block = []
       _.each config.track_lengths, (length, i)->
         # chunk by 16
-        #@TODO scramble chunks ?
         chunks = _.chunk base[i], 16
         # we start at pat and take length to merge
         ct = 0
@@ -76,30 +95,140 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
     return blocks
 
 
-  blocks = []
   # build the complete blocks
   mains_pats = make_blocks(pats)
   fills_pats = make_blocks(fills)
 
-  _.each mains_pats, (main) ->
-    # create variation function
-    variation = (mn, fll)->
-      variation = []
-      _.each mn, (track, i)->
-        # chance to vary
-        if Math.random() < config.track_varys[i]
-          console.log "var", i
+  # create the blocks
+  create_blocks = (mains_pats)->
+    blocks = []
+    _.each mains_pats, (main) ->
+      # main and fills
+      block = {main:main, fills:[], variations: []}
+      while block.fills.length < config.fills_per_phrase
+        block.fills.push _.sample fills_pats
+      # variations
+      while block.variations.length < config.variations_per_phrase
+        block.variations.push tools.variation(main, block.fills, config)
+      # block is ready
+      blocks.push block
+    return blocks
+
+  # call blocks creation
+  blocks = create_blocks mains_pats
+
+  # create sections with tracks
+  create_section = (blocks, config)->
+    section_build = []
+    # which main ?
+    pattern_iterator = 0
+    # which fill ?
+    fill_iterator = 0
+    # which var ?
+    var_iterator = 0
+
+    _.each sections_g, (section, i)->
+      # pre build tracks
+      section_tracks = ([] for t in [0..6])
+      # build section
+      block = blocks[pattern_iterator%config.patterns]
+
+      for it in [0..config.phrase-1]
+        # which chunk of patterns
+        chunk = it%max_trk_len
+
+        if !((it+1)%config.variation_time) and (it isnt config.phrase-1) # variation
+          _.each block.variations[var_iterator%block.variations.length], (tr, k)->
+            section_tracks[k] = section_tracks[k].concat _.chunk(tr, 16)[chunk]
+
+        # @TODO ouais ..
+        else if it is config.phrase-1
+          _.each block.fills[fill_iterator%block.fills.length], (tr, k)->
+            section_tracks[k] = section_tracks[k].concat _.chunk(tr, 16)[chunk]
+
         else
-          variation.push track
-          console.log track.length
+          _.each block.main, (tr, k)->
+            section_tracks[k] = section_tracks[k].concat _.chunk(tr, 16)[chunk]
+
+      # change iterators
+      # pattern according to markov
+      if Math.random() < markov.new_pattern_section[section]
+        pattern_iterator++
+      if Math.random() < markov.new_pattern_section[section]*2
+        fill_iterator++
+        var_iterator++
+
+      # manage mutes per sections
+      _.each section_tracks, (track, ti)->
+        #console.log track.length
+        if Math.random() > markov.track_presence[config.track_weights[ti]][section]
+          section_tracks[ti] = (0 for step in [0..section_tracks[ti].length-1])
+          #console.log section, i, ti,'mute'
+
+      section_build.push section_tracks
+
+    return section_build
+  # call section filling
+  song = create_section blocks, config
+
+  # some candies
+  # humanize
+  humanize = (song, config)->
+    n_song = []
+    _.each song, (section)->
+      n_section = []
+      _.each section, (track)->
+        n_track = []
+        _.each track, (step)->
+          if step
+            hum = tools.normalRand step, config.humanize_rate
+            n_track.push _.clamp hum, 0, 1
+          else
+            n_track.push 0
+        n_section.push n_track
+      n_song.push n_section
+    return n_song
+
+  # humanize a bit
+  if config.humanize
+    song = humanize song, config
+
+  # create fades
+  create_fades = (song, config)->
+    # is the track muted ?
+    is_mute = (track)->
+      answer = true
+      _.each track, (step)->
+        if step
+          answer = false
+      return answer
+
+    chunks = _.chunk song, 2
+    c = 0
+    _.each chunks, (pair)->
+
+      _.each pair[0], (track0, i)->
+        if is_mute(track0) and !is_mute(pair[1][i])
+          if Math.random() < config.track_fades[i]
+            ipolated = _.clone pair[1][i]
+            _.each ipolated, (step, j)->
+              if step
+                ipolated[j] = tools.map j, 0, ipolated.length, 0, 1
+            # replace
+            song[c][i] = ipolated
+      c += 2
+
+  # fadin
+  create_fades song, config
+
+  # generate midi
+  midi song, config
 
 
-    # main and fills
-    block = {main:main, fills:[]}
-    while block.fills.length < config.fills_per_phrase
-      block.fills.push _.sample fills_pats
-    # variations
-    variation main, _.sample block.fills
+
+
+
+
 
 
 
