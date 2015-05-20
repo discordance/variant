@@ -58,7 +58,7 @@ module.exports = (song, config)->
             groove = grooves[config.groove_kernel]
             # how much grooves
             groove_tracks_len = groove[(k+1)%groove.length].length
-            next_drift = groove[(k+1)%groove.length][config.groove_map[j]%groove_tracks_len]
+            next_drift = groove[(k+1)%config.groove_mod][config.groove_map[j]%groove_tracks_len]
 
             ndrift = Math.round next_drift*sixth
             ldrift = Math.round last_drift*sixth
