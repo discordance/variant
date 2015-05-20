@@ -22,6 +22,7 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
   # according to the wanted
   # phrase number
   sections_g = sections(c)
+  console.log sections_g
 
   # randomly select a pattern base, according to the style
   len = beats[config.style].length

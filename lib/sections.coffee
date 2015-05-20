@@ -33,7 +33,7 @@ module.exports = (phrases)->
     kickin_ratio = (_.filter sections, (d)-> d is 0).length / sections.length
     out_ratio = (_.filter sections, (d)-> d is 4).length / sections.length
     break_ratio = (_.filter sections, (d)-> d is 3).length / sections.length
-    return true if kickin_ratio < 0.2 and out_ratio < 0.25 and break_ratio < 0.22
+    return true if kickin_ratio < 0.25 and out_ratio < 0.25 and break_ratio < 0.18
     return false
 
   generated = generate()
