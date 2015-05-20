@@ -160,10 +160,10 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
 
       # manage mutes per sections
       _.each section_tracks, (track, ti)->
-        #console.log track.length
-        if Math.random() > markov.track_presence[config.track_weights[ti]][section]
+        # scaled matrix
+        mat = tools.scale_matrix markov.track_presence, config.presence_scale
+        if Math.random() > mat[config.track_weights[ti]][section]
           section_tracks[ti] = (0 for step in [0..section_tracks[ti].length-1])
-          #console.log section, i, ti,'mute'
 
       section_build.push section_tracks
 
@@ -193,33 +193,59 @@ fs.readFile './data/kmeaned.json', 'utf8', (err, file)->
   if config.humanize
     song = humanize song, config
 
+
+  # is the track muted ?
+  is_mute = (track)->
+    answer = true
+    _.each track, (step)->
+      if step
+        answer = false
+    return answer
+
   # create fades
   create_fades = (song, config)->
-    # is the track muted ?
-    is_mute = (track)->
-      answer = true
-      _.each track, (step)->
-        if step
-          answer = false
-      return answer
-
     chunks = _.chunk song, 2
     c = 0
     _.each chunks, (pair)->
-
-      _.each pair[0], (track0, i)->
-        if is_mute(track0) and !is_mute(pair[1][i])
-          if Math.random() < config.track_fades[i]
-            ipolated = _.clone pair[1][i]
-            _.each ipolated, (step, j)->
-              if step
-                ipolated[j] = tools.map j, 0, ipolated.length, 0, 1
-            # replace
-            song[c][i] = ipolated
-      c += 2
+      if pair[1] # can be an odd number
+        _.each pair[0], (track0, i)->
+          if is_mute(track0) and !is_mute(pair[1][i])
+            if Math.random() < config.track_fades[i]
+              ipolated = _.clone pair[1][i]
+              _.each ipolated, (step, j)->
+                if step
+                  ipolated[j] = tools.map j, 0, ipolated.length, 0, 0.75
+              # replace
+              song[c][i] = ipolated
+        c += 2
 
   # fadin
   create_fades song, config
+
+  # compress
+  compress = (track, tech_mode = false)->
+    ratios = [1, 0.5, 0.75, 0.5]
+    ratios_tech = [1, 0, 0.5, 0]
+    n_track = []
+    _.each track, (step, i)->
+      if step
+        if !tech_mode
+          comp = (ratios[i%4]-step)/2
+          n_track.push step+comp
+        else
+          comp = (ratios_tech[i%4]-step)/2
+          n_track.push step+comp
+      else
+        if !(i%4) and tech_mode and !is_mute(track)
+          n_track.push 1
+        else n_track.push 0
+
+    return n_track
+
+  # apply compress and tech mode
+  if config.compress_kick
+    _.each song, (section, i)->
+      song[i][0] = compress song[i][0], config.tech_mode
 
   # generate midi
   midi song, config

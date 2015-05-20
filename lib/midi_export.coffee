@@ -1,21 +1,32 @@
 MIDI = require 'midijs'
 File = MIDI.File
 Fs = require 'fs'
+Eden = require 'node-eden'
 _ = require './lodash_extended'
 
+# load the grooves
+grooves = require '../data/grooves.json'
+
+
 module.exports = (song, config)->
+
   # setup tracks and header
+  sixth = 32*4
   file = new File()
-  file.getHeader().setTicksPerBeat(128)
+  file.getHeader().setTicksPerBeat(128*4)
   for i in [0..7]
     file.addTrack i
 
-  # 32 is one 16th note
-  #
   counter = 0
   _.each song, (section, i)->
+
+    # iterates through tracks
      _.each section, (track, j)->
         track_events = []
+
+        # store last drift for groove kernels
+        last_drift = 0
+        # iterates through steps
         _.each track, (step, k)->
           # get note
           getnote = (note, step, track, delta, type = File.ChannelEvent.TYPE.NOTE_ON)->
@@ -24,21 +35,38 @@ module.exports = (song, config)->
               velocity: Math.floor step*127
             }, track, delta)
 
-          if step
-            if !(k%2)
-              track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_ON)
-              track_events.push getnote(64, step, j, 32+(32*config.groove), File.ChannelEvent.TYPE.NOTE_OFF)
+          # normal groove
+          if !config.groove_kernel
+            if step
+              if !(k%2)
+                track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_ON)
+                track_events.push getnote(64, step, j, sixth+(sixth*config.groove), File.ChannelEvent.TYPE.NOTE_OFF)
+              else
+                track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_ON)
+                track_events.push getnote(64, step, j, sixth-(sixth*config.groove)+1, File.ChannelEvent.TYPE.NOTE_OFF)
             else
-              track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_ON)
-              track_events.push getnote(64, step, j, 32-(32*config.groove)+1, File.ChannelEvent.TYPE.NOTE_OFF)
-          else
-            if !(k%2)
-              track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_OFF)
-              track_events.push getnote(64, step, j, 32+(32*config.groove), File.ChannelEvent.TYPE.NOTE_OFF)
-            else
-              track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_OFF)
-              track_events.push getnote(64, step, j, 32-(32*config.groove)+1, File.ChannelEvent.TYPE.NOTE_OFF)
+              if !(k%2)
+                track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_OFF)
+                track_events.push getnote(64, step, j, sixth+(sixth*config.groove), File.ChannelEvent.TYPE.NOTE_OFF)
+              else
+                track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_OFF)
+                track_events.push getnote(64, step, j, sixth-(sixth*config.groove)+1, File.ChannelEvent.TYPE.NOTE_OFF)
 
+          # kernel groove
+          else
+            groove = grooves[config.groove_kernel]
+            next_drift = groove[(k+1)%groove.length][config.groove_map[j]%groove.length]
+
+            if step
+              track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_ON)
+              track_events.push getnote(64, step, j, sixth+(sixth*next_drift)-(sixth*last_drift), File.ChannelEvent.TYPE.NOTE_OFF)
+            else
+              track_events.push getnote(64, step, j, 0, File.ChannelEvent.TYPE.NOTE_OFF)
+              track_events.push getnote(64, step, j, sixth+(sixth*next_drift)-(sixth*last_drift), File.ChannelEvent.TYPE.NOTE_OFF)
+
+            last_drift = next_drift
+
+          # end song
           if i is song.length-1 and k is track.length-1
             track_events.push new File.MetaEvent(File.MetaEvent.TYPE.END_OF_TRACK)
 
@@ -48,6 +76,6 @@ module.exports = (song, config)->
   file.getData (err, data) ->
     if err
       throw err
-    Fs.writeFile 'test.mid', data, (err) ->
+    Fs.writeFile './data/rendered/'+Eden.eve()+'.mid', data, (err) ->
       if err
         throw err

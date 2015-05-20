@@ -36,6 +36,16 @@ module.exports = {
   map: (value, start1, stop1, start2, stop2) ->
     start2 + (stop2 - start2) * (value - start1) / (stop1 - start1)
 
+  logScale: (value)->
+    value = _.clamp value, 0.2, 1
+    return @map Math.log(value), Math.log(0.2), Math.log(1), Math.log(1), Math.log(Math.E)
+
+  scale_matrix: (mat, scale = 1)->
+    nmat = _.clone mat
+    for i in [0..nmat.length-1]
+      nmat[i] = nmat[i].map (i) => parseFloat (@logScale(i)*scale).toFixed(2)
+    return nmat
+
   # add delay on a track
   delay: (track, timediv = 2, fade = 0.5)->
     map_func = @map
